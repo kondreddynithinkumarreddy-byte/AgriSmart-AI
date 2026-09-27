@@ -7,8 +7,7 @@ import sys
 import json
 import joblib
 import numpy as np
-import pandas as pd
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -131,7 +130,7 @@ def train_and_evaluate_all_models() -> Dict[str, Any]:
             benchmark_results.append(record)
 
     benchmark_results.sort(
-        key=lambda x: (x["test_f1_weighted"], x["cv_f1_mean"]),
+        key=lambda x: (x["cv_f1_mean"], -x["cv_f1_std"]),
         reverse=True
     )
     winner_meta = benchmark_results[0]

@@ -8,7 +8,7 @@ import json
 import joblib
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -55,35 +55,51 @@ def validate_input_features(features: Dict[str, float]) -> Dict[str, Any]:
     errors = []
     warnings = []
 
-    required_keys = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
+    required_keys = list(EXPECTED_RANGES)
+    numeric_features: Dict[str, float] = {}
+
     for k in required_keys:
         if k not in features:
             errors.append(f"Missing required input parameter: '{k}'")
+            continue
+
+        try:
+            value = float(features[k])
+        except (TypeError, ValueError, OverflowError):
+            errors.append(f"{EXPECTED_RANGES[k]['name']} must be a finite number.")
+            continue
+
+        if not np.isfinite(value):
+            errors.append(f"{EXPECTED_RANGES[k]['name']} must be a finite number.")
+            continue
+
+        numeric_features[k] = value
 
     if errors:
         return {"is_valid": False, "errors": errors, "warnings": warnings}
 
-    if features["N"] < 0:
+    if numeric_features["N"] < 0:
         errors.append("Nitrogen (N) cannot be negative.")
-    if features["P"] < 0:
+    if numeric_features["P"] < 0:
         errors.append("Phosphorus (P) cannot be negative.")
-    if features["K"] < 0:
+    if numeric_features["K"] < 0:
         errors.append("Potassium (K) cannot be negative.")
-    if features["humidity"] < 0 or features["humidity"] > 100:
+    if numeric_features["temperature"] < -273.15:
+        errors.append("Temperature cannot be below absolute zero (-273.15 °C).")
+    if numeric_features["humidity"] < 0 or numeric_features["humidity"] > 100:
         errors.append("Relative Humidity must be between 0% and 100%.")
-    if features["ph"] < 0 or features["ph"] > 14:
+    if numeric_features["ph"] < 0 or numeric_features["ph"] > 14:
         errors.append("Soil pH must be within the chemical range of 0.0 to 14.0.")
-    if features["rainfall"] < 0:
+    if numeric_features["rainfall"] < 0:
         errors.append("Rainfall cannot be negative.")
 
-    for key, val in features.items():
-        if key in EXPECTED_RANGES:
-            bounds = EXPECTED_RANGES[key]
-            if val < bounds["min"] or val > bounds["max"]:
-                warnings.append(
-                    f"{bounds['name']} ({val} {bounds['unit']}) is outside typical training range "
-                    f"[{bounds['min']} - {bounds['max']} {bounds['unit']}]."
-                )
+    for key, val in numeric_features.items():
+        bounds = EXPECTED_RANGES[key]
+        if val < bounds["min"] or val > bounds["max"]:
+            warnings.append(
+                f"{bounds['name']} ({val} {bounds['unit']}) is outside typical training range "
+                f"[{bounds['min']} - {bounds['max']} {bounds['unit']}]."
+            )
 
     return {
         "is_valid": len(errors) == 0,
@@ -97,12 +113,18 @@ def predict_crop_suitability(
     model=None,
     metadata: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
+    validation = validate_input_features(inputs)
+    if not validation["is_valid"]:
+        raise ValueError("Invalid prediction inputs: " + "; ".join(validation["errors"]))
+
+    normalized_inputs = {key: float(inputs[key]) for key in EXPECTED_RANGES}
+
     if model is None:
         model = load_production_model()
     if metadata is None:
         metadata = load_model_metadata()
 
-    raw_df = pd.DataFrame([inputs])
+    raw_df = pd.DataFrame([normalized_inputs])
     feature_cols = metadata.get("features", ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"])
     if len(feature_cols) > 7:
         input_df = create_engineered_features(raw_df)[feature_cols]
@@ -157,6 +179,17 @@ def simulate_what_if_scenario(
     max_val: float,
     steps: int = 10,
 ) -> List[Dict[str, Any]]:
+    if feature_to_vary not in EXPECTED_RANGES:
+        raise ValueError(f"Unsupported feature to vary: {feature_to_vary!r}.")
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
+        raise ValueError("steps must be a positive integer.")
+    if not np.isfinite(min_val) or not np.isfinite(max_val) or min_val > max_val:
+        raise ValueError("Scenario bounds must be finite and min_val must not exceed max_val.")
+
+    validation = validate_input_features(base_features)
+    if not validation["is_valid"]:
+        raise ValueError("Invalid base features: " + "; ".join(validation["errors"]))
+
     model = load_production_model()
     metadata = load_model_metadata()
 

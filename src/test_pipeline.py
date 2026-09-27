@@ -5,8 +5,8 @@ AgriSmart AI - System Integration Test Suite
 import os
 import sys
 import json
-import pandas as pd
-import numpy as np
+import tempfile
+from unittest.mock import patch
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -14,20 +14,16 @@ if PROJECT_ROOT not in sys.path:
 
 from src.data_processing import (
     load_and_validate_dataset,
-    get_dataset_summary_statistics,
-    detect_outliers_iqr,
-    get_crop_profiles,
 )
-from src.feature_engineering import create_engineered_features, save_engineered_dataset
+from src.feature_engineering import create_engineered_features
 from src.prediction import (
     load_production_model,
     predict_crop_suitability,
-    validate_input_features,
-    simulate_what_if_scenario,
 )
 from src.soil_analysis import analyze_soil_nutrients
 from src.environmental_analysis import analyze_environmental_conditions
 from src.explainability import get_model_feature_importance, generate_crop_comparison_explanation
+from src import database as database_module
 from src.database import init_db, log_prediction, get_recent_predictions, export_predictions_to_dataframe
 from src.report_generator import generate_pdf_report
 
@@ -49,8 +45,7 @@ def run_integration_tests():
     df_eng = create_engineered_features(df)
     assert df_eng.shape[1] == 14, f"Expected 14 columns, got {df_eng.shape[1]}"
     assert not df_eng.isnull().values.any(), "Engineered dataset contains NaNs"
-    save_engineered_dataset(df)
-    print("  -> PASSED: Derived 6 features safely; saved Crop_recommendation_engineered.csv.")
+    print("  -> PASSED: Derived 6 features safely without modifying project data.")
 
     print("\n[STAGE 3/8] Testing Serialized Production Model & Metadata...")
     model = load_production_model()
@@ -83,21 +78,22 @@ def run_integration_tests():
     print(f"  -> PASSED: Top feature is '{list(importances.keys())[0]}' ({list(importances.values())[0]*100:.1f}%).")
 
     print("\n[STAGE 7/8] Testing Database CRUD & Transactions...")
-    init_db()
-    rec_id = log_prediction(sample_inputs, pred_res, notes="Integration Test Run")
-    assert rec_id > 0, "Failed to log prediction to SQLite"
-    recent = get_recent_predictions(limit=5)
-    assert len(recent) > 0, "Failed to retrieve recent predictions"
-    df_db = export_predictions_to_dataframe()
-    assert not df_db.empty, "Failed to export dataframe"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        test_db_path = os.path.join(temp_dir, "predictions.db")
+        with patch.object(database_module, "get_db_path", return_value=test_db_path):
+            init_db()
+            rec_id = log_prediction(sample_inputs, pred_res, notes="Integration Test Run")
+            assert rec_id > 0, "Failed to log prediction to SQLite"
+            recent = get_recent_predictions(limit=5)
+            assert recent and recent[0]["id"] == rec_id, "Failed to retrieve the inserted prediction"
+            df_db = export_predictions_to_dataframe()
+            assert not df_db.empty, "Failed to export dataframe"
     print(f"  -> PASSED: Logged transaction ID #{rec_id}, verified retrieval and dataframe export.")
 
     print("\n[STAGE 8/8] Testing PDF Report Generation Engine...")
-    pdf_path = os.path.join(PROJECT_ROOT, "reports", "sample_report.pdf")
-    os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-    pdf_bytes = generate_pdf_report(sample_inputs, pred_res, soil_res, env_res, output_path=pdf_path)
-    assert os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000, "PDF file generation failed"
-    print(f"  -> PASSED: Generated PDF report at {pdf_path} ({os.path.getsize(pdf_path):,} bytes).")
+    pdf_bytes = generate_pdf_report(sample_inputs, pred_res, soil_res, env_res)
+    assert pdf_bytes.startswith(b"%PDF-") and len(pdf_bytes) > 1000, "PDF file generation failed"
+    print(f"  -> PASSED: Generated a valid in-memory PDF report ({len(pdf_bytes):,} bytes).")
 
     print("\n" + "=" * 75)
     print(" >>> ALL 8 SYSTEM INTEGRATION STAGES PASSED WITH ZERO ERRORS! <<<")

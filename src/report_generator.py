@@ -2,9 +2,8 @@
 AgriSmart AI - Automated PDF Report Generator
 """
 
-import os
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from reportlab.lib.pagesizes import letter
@@ -90,7 +89,8 @@ def generate_pdf_report(
     # 1. Header
     elements.append(Paragraph("AGRISMART AI – CROP SUITABILITY DOSSIER", title_style))
     elements.append(Paragraph("Intelligent Crop Suitability & Soil Analysis Diagnostic System", subtitle_style))
-    elements.append(Paragraph(f"Report Generated: {datetime.now().strftime('%B %d, %Y - %H:%M:%S UTC')}", subtitle_style))
+    generated_at = datetime.now(timezone.utc).strftime("%B %d, %Y - %H:%M:%S UTC")
+    elements.append(Paragraph(f"Report Generated: {generated_at}", subtitle_style))
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#2e7d32"), spaceAfter=12))
 

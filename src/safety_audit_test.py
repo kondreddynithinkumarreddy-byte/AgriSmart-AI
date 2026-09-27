@@ -5,10 +5,10 @@ AgriSmart AI - Comprehensive Safety & Robustness Audit Suite
 import os
 import sys
 import json
-import sqlite3
+import tempfile
 import pandas as pd
 import numpy as np
-import joblib
+from unittest.mock import patch
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -16,42 +16,34 @@ if PROJECT_ROOT not in sys.path:
 
 from src.data_processing import (
     load_and_validate_dataset,
-    get_dataset_summary_statistics,
     detect_outliers_iqr,
     get_crop_profiles,
 )
 from src.feature_engineering import (
     create_engineered_features,
-    get_feature_engineering_summary,
 )
-from src.evaluate_model import evaluate_model_performance
 from src.prediction import (
     load_production_model,
     predict_crop_suitability,
     validate_input_features,
     simulate_what_if_scenario,
-    EXPECTED_RANGES,
 )
 from src.soil_analysis import (
     analyze_soil_nutrients,
-    get_ph_classification,
-    get_nutrient_status_label,
 )
 from src.environmental_analysis import (
     analyze_environmental_conditions,
-    get_climate_regime,
 )
 from src.explainability import (
     get_model_feature_importance,
     generate_crop_comparison_explanation,
 )
+from src import database as database_module
 from src.database import (
     init_db,
     log_prediction,
     get_recent_predictions,
-    get_prediction_count,
     export_predictions_to_dataframe,
-    get_db_connection,
 )
 from src.report_generator import generate_pdf_report
 
@@ -315,6 +307,31 @@ class SafetyAuditTester:
             else:
                 self.log_failure("Agronomic Range Warning", "Did not issue warning for rainfall > 300mm")
 
+            for case_name, invalid_value in (
+                ("NaN", float("nan")),
+                ("infinity", float("inf")),
+                ("non-numeric input", "not-a-number"),
+                ("missing value", None),
+            ):
+                malformed_input = valid_input.copy()
+                malformed_input["N"] = invalid_value
+                malformed_result = validate_input_features(malformed_input)
+                if not malformed_result["is_valid"] and malformed_result["errors"]:
+                    self.log_success(f"Malformed Input Rejection: {case_name}")
+                else:
+                    self.log_failure(f"Malformed Input Rejection: {case_name}", "Invalid value was accepted")
+
+            try:
+                predict_crop_suitability(
+                    {**valid_input, "N": float("nan")},
+                    model=object(),
+                    metadata={},
+                )
+            except ValueError:
+                self.log_success("Prediction API Rejects Invalid Inputs")
+            else:
+                self.log_failure("Prediction API Rejects Invalid Inputs", "Invalid values reached model inference")
+
         except Exception as e:
             self.log_failure("Input Validation Exception", str(e))
 
@@ -365,43 +382,39 @@ class SafetyAuditTester:
     def audit_9_database_acid_and_concurrency(self):
         print("\n[AUDIT 9/12] Testing SQLite Database CRUD, Transactions & Query Integrity...")
         try:
-            init_db()
+            with tempfile.TemporaryDirectory() as temp_dir:
+                test_db_path = os.path.join(temp_dir, "predictions.db")
+                with patch.object(database_module, "get_db_path", return_value=test_db_path):
+                    init_db()
 
-            test_id = log_prediction(
-                inputs={"N": 90, "P": 42, "K": 43, "temperature": 20.8, "humidity": 82.0, "ph": 6.5, "rainfall": 202.9},
-                prediction_result={
-                    "predicted_crop": "rice",
-                    "confidence": 0.995,
-                    "confidence_pct": 99.5,
-                    "model_used": "Random Forest",
-                    "top_recommendations": [{"crop": "rice", "probability": 0.995, "probability_pct": 99.5}]
-                },
-                notes="Safety Audit Automated Test Entry"
-            )
+                    test_id = log_prediction(
+                        inputs={"N": 90, "P": 42, "K": 43, "temperature": 20.8, "humidity": 82.0, "ph": 6.5, "rainfall": 202.9},
+                        prediction_result={
+                            "predicted_crop": "rice",
+                            "confidence": 0.995,
+                            "confidence_pct": 99.5,
+                            "model_used": "Random Forest",
+                            "top_recommendations": [{"crop": "rice", "probability": 0.995, "probability_pct": 99.5}]
+                        },
+                        notes="Safety Audit Automated Test Entry"
+                    )
 
-            if test_id > 0:
-                self.log_success("Database Log Insertion", f"Inserted record with ID: {test_id}")
-            else:
-                self.log_failure("Database Log Insertion", "Failed to insert record")
+                    if test_id > 0:
+                        self.log_success("Database Log Insertion", f"Inserted record with ID: {test_id}")
+                    else:
+                        self.log_failure("Database Log Insertion", "Failed to insert record")
 
-            recent_records = get_recent_predictions(limit=5)
-            if len(recent_records) > 0 and recent_records[0]["id"] == test_id:
-                self.log_success("Database Record Retrieval", f"Retrieved record ID {test_id} matching logged data")
-            else:
-                self.log_failure("Database Record Retrieval", "Could not verify inserted record")
+                    recent_records = get_recent_predictions(limit=5)
+                    if recent_records and recent_records[0]["id"] == test_id:
+                        self.log_success("Database Record Retrieval", f"Retrieved record ID {test_id} matching logged data")
+                    else:
+                        self.log_failure("Database Record Retrieval", "Could not verify inserted record")
 
-            df_export = export_predictions_to_dataframe()
-            if not df_export.empty and "predicted_crop" in df_export.columns:
-                self.log_success("Database CSV Export Capability", f"Exported {len(df_export)} records to Pandas DataFrame")
-            else:
-                self.log_failure("Database CSV Export Capability", "Failed to export dataframe")
-
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM prediction_history WHERE id = ?", (test_id,))
-            conn.commit()
-            conn.close()
-            self.log_success("Database Cleanup Transaction", f"Cleaned up test record {test_id} without side effects")
+                    df_export = export_predictions_to_dataframe()
+                    if not df_export.empty and "predicted_crop" in df_export.columns:
+                        self.log_success("Database CSV Export Capability", f"Exported {len(df_export)} records to Pandas DataFrame")
+                    else:
+                        self.log_failure("Database CSV Export Capability", "Failed to export dataframe")
 
         except Exception as e:
             self.log_failure("Database Exception", str(e))
@@ -460,7 +473,7 @@ class SafetyAuditTester:
             with open(app_path, "r", encoding="utf-8") as f:
                 code_content = f.read()
 
-            compiled_code = compile(code_content, app_path, "exec")
+            compile(code_content, app_path, "exec")
             self.log_success("Streamlit AST Compilation", f"Compiled {len(code_content.splitlines()):,} lines of Python with 0 syntax errors")
 
         except Exception as e:

@@ -5,7 +5,6 @@ AgriSmart AI - Data Processing & Exploration Module
 import os
 import sys
 import pandas as pd
-import numpy as np
 from typing import Tuple, Dict, Any, List
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

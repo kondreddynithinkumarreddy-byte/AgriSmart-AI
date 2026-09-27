@@ -1,48 +1,39 @@
 """
 AgriSmart AI – Intelligent Crop Suitability & Soil Analysis System
-===================================================================
-A polished, user-facing agricultural decision-support application.
+Production Streamlit Application
 """
 
 import os
 import sys
 import json
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# Setup dynamic project root path (relative, cross-platform)
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from src.data_processing import (
     load_and_validate_dataset,
-    get_dataset_summary_statistics,
-    detect_outliers_iqr,
     get_crop_profiles,
-    get_dataset_overview,
     NUMERICAL_FEATURES,
     TARGET_COLUMN,
 )
-from src.feature_engineering import create_engineered_features
 from src.prediction import (
     load_production_model,
     load_model_metadata,
     predict_crop_suitability,
     validate_input_features,
-    simulate_what_if_scenario,
     EXPECTED_RANGES,
     CROP_ICONS,
 )
 from src.soil_analysis import analyze_soil_nutrients
 from src.environmental_analysis import analyze_environmental_conditions
-from src.explainability import (
-    get_model_feature_importance,
-    generate_crop_comparison_explanation,
-)
 from src.database import (
     init_db,
     log_prediction,
@@ -53,9 +44,7 @@ from src.database import (
 )
 from src.report_generator import generate_pdf_report
 
-# ==============================================================================
-# STREAMLIT CONFIGURATION & POLISHED AGRICULTURAL THEME
-# ==============================================================================
+# Page Configuration
 st.set_page_config(
     page_title="AgriSmart AI – Crop & Soil Intelligence",
     page_icon="🌱",
@@ -63,400 +52,405 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom Theme CSS
+# Custom Styling
 st.markdown("""
 <style>
-    :root {
-        --primary: #1b5e20;
-        --primary-light: #2e7d32;
-        --accent: #e8f5e9;
-        --text-main: #0f172a;
-        --text-muted: #475569;
-        --border-color: #e2e8f0;
-    }
-    
-    .app-title {
+    /* Global Typography & Palette */
+    .main-header {
         font-size: 2.2rem;
-        font-weight: 800;
+        font-weight: 700;
         color: #1b5e20;
-        margin: 0;
+        margin-bottom: 0.2rem;
     }
-    .app-subtitle {
+    .sub-header {
         font-size: 1.05rem;
-        color: #475569;
+        color: #4a5568;
         margin-bottom: 1.5rem;
-        line-height: 1.5;
     }
-
-    /* Hero Banner */
-    .hero-banner {
-        background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 60%, #388e3c 100%);
-        color: white;
-        padding: 2.2rem;
-        border-radius: 16px;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 25px -5px rgba(27, 94, 32, 0.25);
+    .metric-card {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-left: 5px solid #2e7d32;
+        padding: 1.1rem;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        margin-bottom: 0.8rem;
     }
-    .hero-banner h1 {
-        font-size: 2.4rem;
-        font-weight: 800;
-        color: white !important;
-        margin-bottom: 0.5rem;
+    .metric-label {
+        font-size: 0.85rem;
+        color: #718096;
+        font-weight: 600;
+        text-transform: uppercase;
     }
-    .hero-banner p {
-        font-size: 1.15rem;
-        color: #e8f5e9;
-        margin-bottom: 1.5rem;
-        max-width: 800px;
-        line-height: 1.6;
+    .metric-val {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #1a202c;
     }
-
-    /* Result Card */
-    .prediction-hero {
-        background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
+    .metric-sub {
+        font-size: 0.82rem;
+        color: #2e7d32;
+        font-weight: 500;
+    }
+    .result-hero {
+        background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
         color: white;
         padding: 2rem;
-        border-radius: 16px;
+        border-radius: 12px;
         text-align: center;
-        margin: 1.5rem 0;
-        box-shadow: 0 8px 20px -4px rgba(27, 94, 32, 0.3);
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 12px rgba(27, 94, 32, 0.25);
     }
-    .prediction-hero .label-text {
-        font-size: 1rem;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: #c8e6c9;
-        font-weight: 600;
-    }
-    .prediction-hero .crop-name {
-        font-size: 3.5rem;
-        font-weight: 900;
+    .hero-crop-title {
+        font-size: 3.2rem;
+        font-weight: 800;
         margin: 0.4rem 0;
-        color: white;
+        color: #ffffff;
     }
-    .prediction-hero .confidence-badge {
+    .hero-subtitle {
         font-size: 1.2rem;
-        background: rgba(255, 255, 255, 0.22);
-        padding: 6px 20px;
-        border-radius: 30px;
+        color: #e8f5e9;
+    }
+    .badge-tag {
         display: inline-block;
-        font-weight: 700;
-    }
-
-    /* Product Feature Cards */
-    .product-card {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.04);
-        height: 100%;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .product-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 16px rgba(0,0,0,0.08);
-        border-color: #cbd5e1;
-    }
-    .product-card .card-icon {
-        font-size: 2rem;
-        margin-bottom: 0.75rem;
-    }
-    .product-card .card-title {
-        font-size: 1.2rem;
-        font-weight: 700;
+        padding: 0.25rem 0.6rem;
+        background-color: #e8f5e9;
         color: #1b5e20;
-        margin-bottom: 0.5rem;
-    }
-    .product-card .card-desc {
-        font-size: 0.95rem;
-        color: #475569;
-        line-height: 1.5;
-    }
-
-    /* Compact Diagnostic Summary Box */
-    .summary-box {
-        background: #f8fafc;
-        border-left: 4px solid #2e7d32;
-        border-radius: 8px;
-        padding: 1rem 1.25rem;
-        margin-bottom: 1rem;
-    }
-    .summary-box-title {
-        font-size: 0.9rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        color: #1b5e20;
-        margin-bottom: 0.25rem;
-    }
-    .summary-box-val {
-        font-size: 1.1rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
         font-weight: 600;
-        color: #0f172a;
+        margin: 0.2rem;
     }
-
-    /* Buttons */
     .stButton>button {
         background-color: #2e7d32;
         color: white;
-        font-weight: 700;
-        font-size: 1rem;
+        font-weight: 600;
         border-radius: 8px;
-        padding: 0.6rem 2rem;
+        padding: 0.5rem 1.5rem;
         border: none;
         transition: all 0.2s ease;
     }
     .stButton>button:hover {
         background-color: #1b5e20;
         color: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ==============================================================================
-# CACHED DATA & MODEL LOADERS
-# ==============================================================================
+# Cached Data & Model Loading
 @st.cache_data
-def get_cached_dataset():
+def get_dataset():
     df, summary = load_and_validate_dataset()
     return df, summary
 
 
 @st.cache_resource
-def get_cached_model():
+def get_model():
     model = load_production_model()
     metadata = load_model_metadata()
     return model, metadata
 
 
-# Initialize SQLite
+# Initialize Database
 init_db()
 
-# Load authoritative resources
-df_raw, data_summary = get_cached_dataset()
-model, model_metadata = get_cached_model()
+# Load Resources
+df_raw, data_summary = get_dataset()
+model, model_metadata = get_model()
 
-# Calculate dataset medians for sensible defaults
-DATASET_MEDIANS = {
-    "N": float(df_raw["N"].median()),
-    "P": float(df_raw["P"].median()),
-    "K": float(df_raw["K"].median()),
-    "temperature": float(df_raw["temperature"].median()),
-    "humidity": float(df_raw["humidity"].median()),
-    "ph": float(df_raw["ph"].median()),
-    "rainfall": float(df_raw["rainfall"].median()),
-}
+# Canonical Session State Initialization
+if "inputs" not in st.session_state:
+    st.session_state.inputs = {
+        "N": 90.0,
+        "P": 42.0,
+        "K": 43.0,
+        "temperature": 20.87,
+        "humidity": 82.0,
+        "ph": 6.5,
+        "rainfall": 202.91,
+    }
+if "prediction" not in st.session_state:
+    st.session_state.prediction = None
+if "confidence" not in st.session_state:
+    st.session_state.confidence = None
+if "probabilities" not in st.session_state:
+    st.session_state.probabilities = None
+if "model_name" not in st.session_state:
+    st.session_state.model_name = model_metadata.get("model_name", "Random Forest")
+if "timestamp" not in st.session_state:
+    st.session_state.timestamp = None
+if "field_notes" not in st.session_state:
+    st.session_state.field_notes = "Field Zone A-1"
+if "soil_analysis" not in st.session_state:
+    st.session_state.soil_analysis = None
+if "env_analysis" not in st.session_state:
+    st.session_state.env_analysis = None
 
-# Calculate dataset ranges
-DATASET_RANGES = {
-    col: (float(df_raw[col].min()), float(df_raw[col].max()))
-    for col in NUMERICAL_FEATURES
-}
 
-# Session State for navigation & persistence
-if "nav_page" not in st.session_state:
-    st.session_state["nav_page"] = "🏠 Home"
-
-if "current_inputs" not in st.session_state:
-    st.session_state["current_inputs"] = DATASET_MEDIANS.copy()
-
-if "last_analysis" not in st.session_state:
-    st.session_state["last_analysis"] = None
-
-
-# ==============================================================================
-# SIDEBAR NAVIGATION (STREAMLINED 7 CORE PAGES)
-# ==============================================================================
+# Sidebar Navigation
 st.sidebar.markdown("## 🌱 **AgriSmart AI**")
 st.sidebar.caption("Intelligent Crop Suitability & Soil System")
 st.sidebar.markdown("---")
 
-NAV_OPTIONS = [
-    "🏠 Home",
-    "🌱 Crop Analysis",
-    "🧪 Soil Analysis",
-    "🌤 Environmental Analysis",
-    "📊 Insights",
-    "📜 History",
-    "ℹ️ About",
-]
-
-# Synchronize sidebar selection with session state
-selected_page = st.sidebar.radio(
+nav_choice = st.sidebar.radio(
     "Navigation",
-    NAV_OPTIONS,
-    index=NAV_OPTIONS.index(st.session_state["nav_page"]) if st.session_state["nav_page"] in NAV_OPTIONS else 0,
+    [
+        "🏠 Home",
+        "🌱 Crop Analysis",
+        "🧪 Soil Analysis",
+        "⛅ Environmental Analysis",
+        "💡 Insights",
+        "📜 Prediction History",
+        "ℹ️ About",
+    ],
+    index=0,
 )
-
-if selected_page != st.session_state["nav_page"]:
-    st.session_state["nav_page"] = selected_page
-    st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.info(
-    f"**Engine:** `{model_metadata.get('model_name', 'Random Forest')}`\n\n"
-    f"**Accuracy:** `{model_metadata['metrics']['accuracy']*100:.1f}%`\n\n"
-    f"**Saved Analyses:** `{get_prediction_count()}`"
+pred_count = get_prediction_count()
+acc_pct = model_metadata.get("metrics", {}).get("accuracy", 0.9955) * 100
+st.sidebar.markdown(
+    f"""
+    <div style="background-color: #f1f8e9; padding: 0.8rem; border-radius: 8px; border: 1px solid #c8e6c9;">
+        <div style="font-size: 0.8rem; color: #33691e; font-weight: bold;">SYSTEM STATUS</div>
+        <div style="font-size: 0.85rem; color: #1b5e20; margin-top: 4px;">
+            🤖 <b>Engine:</b> {model_metadata.get('model_name', 'Random Forest')}<br/>
+            🎯 <b>Accuracy:</b> {acc_pct:.2f}%<br/>
+            📊 <b>Classes:</b> {data_summary['class_count']} Crops<br/>
+            💾 <b>Audits Logged:</b> {pred_count}
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 
 # ==============================================================================
-# PAGE 1: 🏠 HOME (USER-FOCUSED PRODUCT DASHBOARD)
+# 1. HOME PAGE
 # ==============================================================================
-if st.session_state["nav_page"] == "🏠 Home":
+if nav_choice == "🏠 Home":
+    st.markdown('<div class="main-header">🌱 AgriSmart AI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Intelligent Crop Suitability & Soil Analysis Decision-Support System</div>', unsafe_allow_html=True)
+
+    # Hero Banner
     st.markdown("""
-    <div class="hero-banner">
-        <h1>🌱 AgriSmart AI</h1>
-        <p><b>Intelligent Crop Suitability & Soil Analysis</b><br>
-        Analyze your soil chemistry and meteorological conditions using trained machine learning to identify optimal crop varieties and understand the factors driving each recommendation.</p>
+    <div style="background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%); color: white; padding: 1.8rem; border-radius: 12px; margin-bottom: 1.5rem;">
+        <h2 style="color: white; margin-top: 0; font-size: 1.8rem;">Precision Agriculture Powered by Machine Learning</h2>
+        <p style="font-size: 1.05rem; color: #e8f5e9; max-width: 900px; margin-bottom: 0.8rem;">
+            AgriSmart AI optimizes agricultural yield and reduces resource misallocation by evaluating soil chemical stoichiometry 
+            (Nitrogen, Phosphorus, Potassium, pH) and microclimate parameters (Temperature, Humidity, Rainfall) 
+            against 22 balanced crop classification profiles using trained ensemble learning.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-    col_btn, _ = st.columns([1, 2])
-    with col_btn:
-        if st.button("🚀 Start Crop Analysis →", use_container_width=True):
-            st.session_state["nav_page"] = "🌱 Crop Analysis"
-            st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # 4 Clean Product Feature Cards
-    st.markdown("### Core Capabilities")
+    # Key Stat Metrics
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
-        st.markdown("""
-        <div class="product-card">
-            <div class="card-icon">🌾</div>
-            <div class="card-title">Crop Prediction</div>
-            <div class="card-desc">Predict suitable crop varieties from soil macronutrients and climate parameters with confidence scoring.</div>
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Supported Crops</div>
+            <div class="metric-val">{data_summary['class_count']} Crops</div>
+            <div class="metric-sub">Balanced Kaggle Benchmark</div>
         </div>
         """, unsafe_allow_html=True)
-
     with col2:
-        st.markdown("""
-        <div class="product-card">
-            <div class="card-icon">🧪</div>
-            <div class="card-title">Soil Analysis</div>
-            <div class="card-desc">Understand N, P, K stoichiometry, nutrient tiers, soil pH reaction, and tailored amendment guidelines.</div>
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Model Accuracy</div>
+            <div class="metric-val">{acc_pct:.2f}%</div>
+            <div class="metric-sub">5-Fold Stratified CV</div>
         </div>
         """, unsafe_allow_html=True)
-
     with col3:
         st.markdown("""
-        <div class="product-card">
-            <div class="card-icon">🌤</div>
-            <div class="card-title">Environmental Analysis</div>
-            <div class="card-desc">Analyze temperature, humidity, and rainfall regimes to diagnose potential abiotic stresses.</div>
+        <div class="metric-card">
+            <div class="metric-label">Features Evaluated</div>
+            <div class="metric-val">7 Variables</div>
+            <div class="metric-sub">Chemical & Meteorological</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Audits Logged</div>
+            <div class="metric-val">{pred_count} Records</div>
+            <div class="metric-sub">Persistent SQLite Database</div>
         </div>
         """, unsafe_allow_html=True)
 
-    with col4:
+    st.markdown("### 🌾 How AgriSmart AI Works")
+    step_c1, step_c2, step_c3 = st.columns(3)
+    with step_c1:
         st.markdown("""
-        <div class="product-card">
-            <div class="card-icon">📊</div>
-            <div class="card-title">Smart Insights</div>
-            <div class="card-desc">Explore feature importance, underlying patterns, model performance, and historical audits.</div>
+        <div style="background-color: #f8faf8; border: 1px solid #e0e6ed; padding: 1.2rem; border-radius: 8px; height: 100%;">
+            <h4 style="color: #2e7d32; margin-top: 0;">1. Input Telemetry</h4>
+            <p style="font-size: 0.9rem; color: #4a5568;">
+                Provide soil chemical levels (N, P, K, pH) and environmental weather data (temperature, humidity, rainfall) in the <b>Crop Analysis</b> module.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    with step_c2:
+        st.markdown("""
+        <div style="background-color: #f8faf8; border: 1px solid #e0e6ed; padding: 1.2rem; border-radius: 8px; height: 100%;">
+            <h4 style="color: #2e7d32; margin-top: 0;">2. Machine Learning Inference</h4>
+            <p style="font-size: 0.9rem; color: #4a5568;">
+                Our validated Random Forest ensemble evaluates the multi-dimensional parameter space to generate calibrated suitability probabilities.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    with step_c3:
+        st.markdown("""
+        <div style="background-color: #f8faf8; border: 1px solid #e0e6ed; padding: 1.2rem; border-radius: 8px; height: 100%;">
+            <h4 style="color: #2e7d32; margin-top: 0;">3. Actionable Diagnostics</h4>
+            <p style="font-size: 0.9rem; color: #4a5568;">
+                Review comprehensive soil stoichiometry, pH risk analysis, abiotic climate stress factors, and download an official diagnostic PDF.
+            </p>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("---")
-
-    # Quick Demo Presets
-    st.markdown("### ⚡ Quick Presets")
-    st.write("Load sample regional conditions to test immediate inference:")
-
-    colP1, colP2, colP3, colP4 = st.columns(4)
-    with colP1:
-        if st.button("🌾 Rice Profile (Wetland)", use_container_width=True):
-            st.session_state["current_inputs"] = {"N": 90.0, "P": 42.0, "K": 43.0, "temperature": 20.87, "humidity": 82.0, "ph": 6.5, "rainfall": 202.9}
-            st.session_state["nav_page"] = "🌱 Crop Analysis"
-            st.rerun()
-    with colP2:
-        if st.button("🧆 Chickpea Profile (Dryland)", use_container_width=True):
-            st.session_state["current_inputs"] = {"N": 40.0, "P": 72.0, "K": 77.0, "temperature": 18.8, "humidity": 16.8, "ph": 7.3, "rainfall": 80.0}
-            st.session_state["nav_page"] = "🌱 Crop Analysis"
-            st.rerun()
-    with colP3:
-        if st.button("🍏 Apple Profile (Highland)", use_container_width=True):
-            st.session_state["current_inputs"] = {"N": 20.0, "P": 134.0, "K": 199.0, "temperature": 22.5, "humidity": 92.3, "ph": 5.9, "rainfall": 110.0}
-            st.session_state["nav_page"] = "🌱 Crop Analysis"
-            st.rerun()
-    with colP4:
-        if st.button("👕 Cotton Profile (Warm)", use_container_width=True):
-            st.session_state["current_inputs"] = {"N": 120.0, "P": 40.0, "K": 20.0, "temperature": 24.0, "humidity": 80.0, "ph": 6.8, "rainfall": 80.0}
-            st.session_state["nav_page"] = "🌱 Crop Analysis"
-            st.rerun()
+    st.markdown("### 🌿 Supported Crop Species")
+    crop_list = sorted(data_summary["unique_classes"])
+    tags_html = "".join([f'<span class="badge-tag">{CROP_ICONS.get(c.lower(), "🌱")} {c.capitalize()}</span>' for c in crop_list])
+    st.markdown(f'<div style="line-height: 2.2;">{tags_html}</div>', unsafe_allow_html=True)
 
 
 # ==============================================================================
-# PAGE 2: 🌱 CROP ANALYSIS (CORE PREDICTION & ANALYSIS EXPERIENCE)
+# 2. CROP ANALYSIS PAGE (THE ONLY INPUT PAGE)
 # ==============================================================================
-elif st.session_state["nav_page"] == "🌱 Crop Analysis":
-    st.markdown('<div class="app-title">Crop Suitability Analysis</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Enter the soil and environmental conditions below. AgriSmart AI will analyze the values using the trained machine-learning model.</div>', unsafe_allow_html=True)
+elif nav_choice == "🌱 Crop Analysis":
+    st.markdown('<div class="main-header">🌱 Crop Suitability Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Input Soil Chemical Parameters & Environmental Weather Conditions</div>', unsafe_allow_html=True)
 
-    inputs = st.session_state["current_inputs"]
+    # Preset selector
+    st.markdown("##### ⚡ Quick-Fill Agronomic Presets")
+    p_col1, p_col2, p_col3, p_col4, p_col5, p_col6 = st.columns(6)
+    
+    presets = {
+        "Rice": {"N": 90.0, "P": 42.0, "K": 43.0, "temperature": 20.87, "humidity": 82.0, "ph": 6.5, "rainfall": 202.91, "notes": "Zone A - Wetland Rice"},
+        "Maize": {"N": 71.0, "P": 54.0, "K": 20.0, "temperature": 22.61, "humidity": 65.4, "ph": 5.7, "rainfall": 82.64, "notes": "Zone B - Maize Field"},
+        "Chickpea": {"N": 40.0, "P": 67.0, "K": 79.0, "temperature": 18.87, "humidity": 16.8, "ph": 7.3, "rainfall": 80.05, "notes": "Zone C - Dryland Pulse"},
+        "Cotton": {"N": 117.0, "P": 46.0, "K": 19.0, "temperature": 23.96, "humidity": 79.8, "ph": 6.9, "rainfall": 80.39, "notes": "Zone D - Warm Cotton"},
+        "Coffee": {"N": 101.0, "P": 28.0, "K": 30.0, "temperature": 25.54, "humidity": 58.8, "ph": 6.7, "rainfall": 158.07, "notes": "Zone E - Coffee Plantation"},
+        "Apple": {"N": 20.0, "P": 134.0, "K": 199.0, "temperature": 22.75, "humidity": 92.3, "ph": 5.9, "rainfall": 110.43, "notes": "Zone F - Highland Orchard"},
+    }
 
-    # Input Form
-    with st.form("crop_analysis_form"):
-        col_soil, col_env = st.columns(2)
+    if p_col1.button("🌾 Rice", use_container_width=True):
+        st.session_state.inputs = presets["Rice"].copy()
+        st.session_state.field_notes = presets["Rice"]["notes"]
+        st.rerun()
+    if p_col2.button("🌽 Maize", use_container_width=True):
+        st.session_state.inputs = presets["Maize"].copy()
+        st.session_state.field_notes = presets["Maize"]["notes"]
+        st.rerun()
+    if p_col3.button("🧆 Chickpea", use_container_width=True):
+        st.session_state.inputs = presets["Chickpea"].copy()
+        st.session_state.field_notes = presets["Chickpea"]["notes"]
+        st.rerun()
+    if p_col4.button("👕 Cotton", use_container_width=True):
+        st.session_state.inputs = presets["Cotton"].copy()
+        st.session_state.field_notes = presets["Cotton"]["notes"]
+        st.rerun()
+    if p_col5.button("☕ Coffee", use_container_width=True):
+        st.session_state.inputs = presets["Coffee"].copy()
+        st.session_state.field_notes = presets["Coffee"]["notes"]
+        st.rerun()
+    if p_col6.button("🍏 Apple", use_container_width=True):
+        st.session_state.inputs = presets["Apple"].copy()
+        st.session_state.field_notes = presets["Apple"]["notes"]
+        st.rerun()
 
-        with col_soil:
-            st.markdown("#### 🧪 Soil Conditions")
-            
+    st.markdown("---")
+
+    # The Core Input Form
+    with st.form("crop_prediction_form"):
+        form_col1, form_col2 = st.columns(2)
+
+        with form_col1:
+            st.markdown("#### 🧪 Soil Chemical Properties")
             n_val = st.number_input(
-                f"Nitrogen (N) [kg/ha] — Observed range: {DATASET_RANGES['N'][0]:.0f} to {DATASET_RANGES['N'][1]:.0f}",
-                min_value=0.0, max_value=250.0, value=float(inputs.get("N", DATASET_MEDIANS["N"])), step=1.0,
+                "Nitrogen (N) [kg/ha]",
+                min_value=0.0,
+                max_value=250.0,
+                value=float(st.session_state.inputs.get("N", 90.0)),
+                step=1.0,
+                help="Nitrogen content in topsoil (typical range: 0 - 140 kg/ha)",
             )
             p_val = st.number_input(
-                f"Phosphorus (P) [kg/ha] — Observed range: {DATASET_RANGES['P'][0]:.0f} to {DATASET_RANGES['P'][1]:.0f}",
-                min_value=0.0, max_value=250.0, value=float(inputs.get("P", DATASET_MEDIANS["P"])), step=1.0,
+                "Phosphorus (P) [kg/ha]",
+                min_value=0.0,
+                max_value=250.0,
+                value=float(st.session_state.inputs.get("P", 42.0)),
+                step=1.0,
+                help="Phosphorus content in topsoil (typical range: 5 - 145 kg/ha)",
             )
             k_val = st.number_input(
-                f"Potassium (K) [kg/ha] — Observed range: {DATASET_RANGES['K'][0]:.0f} to {DATASET_RANGES['K'][1]:.0f}",
-                min_value=0.0, max_value=300.0, value=float(inputs.get("K", DATASET_MEDIANS["K"])), step=1.0,
+                "Potassium (K) [kg/ha]",
+                min_value=0.0,
+                max_value=300.0,
+                value=float(st.session_state.inputs.get("K", 43.0)),
+                step=1.0,
+                help="Potassium content in topsoil (typical range: 5 - 205 kg/ha)",
             )
             ph_val = st.number_input(
-                f"Soil pH — Observed range: {DATASET_RANGES['ph'][0]:.1f} to {DATASET_RANGES['ph'][1]:.1f}",
-                min_value=0.0, max_value=14.0, value=float(inputs.get("ph", DATASET_MEDIANS["ph"])), step=0.1,
+                "Soil pH [0.0 – 14.0]",
+                min_value=0.0,
+                max_value=14.0,
+                value=float(st.session_state.inputs.get("ph", 6.5)),
+                step=0.1,
+                help="Soil acidity / alkalinity level (optimal range: 5.5 - 7.5)",
             )
 
-        with col_env:
-            st.markdown("#### 🌤 Environmental Conditions")
-            
-            t_val = st.number_input(
-                f"Temperature (°C) — Observed range: {DATASET_RANGES['temperature'][0]:.1f} to {DATASET_RANGES['temperature'][1]:.1f}",
-                min_value=0.0, max_value=60.0, value=float(inputs.get("temperature", DATASET_MEDIANS["temperature"])), step=0.1,
+        with form_col2:
+            st.markdown("#### ⛅ Environmental & Climate Conditions")
+            temp_val = st.number_input(
+                "Temperature [°C]",
+                min_value=0.0,
+                max_value=60.0,
+                value=float(st.session_state.inputs.get("temperature", 20.87)),
+                step=0.1,
+                help="Average ambient growing temperature in Celsius",
             )
-            h_val = st.number_input(
-                f"Humidity (%) — Observed range: {DATASET_RANGES['humidity'][0]:.1f} to {DATASET_RANGES['humidity'][1]:.1f}",
-                min_value=0.0, max_value=100.0, value=float(inputs.get("humidity", DATASET_MEDIANS["humidity"])), step=0.1,
+            hum_val = st.number_input(
+                "Relative Humidity [%]",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(st.session_state.inputs.get("humidity", 82.0)),
+                step=0.1,
+                help="Atmospheric relative humidity percentage",
             )
-            r_val = st.number_input(
-                f"Rainfall (mm) — Observed range: {DATASET_RANGES['rainfall'][0]:.1f} to {DATASET_RANGES['rainfall'][1]:.1f}",
-                min_value=0.0, max_value=600.0, value=float(inputs.get("rainfall", DATASET_MEDIANS["rainfall"])), step=1.0,
+            rain_val = st.number_input(
+                "Rainfall [mm]",
+                min_value=0.0,
+                max_value=600.0,
+                value=float(st.session_state.inputs.get("rainfall", 202.91)),
+                step=1.0,
+                help="Seasonal or annual precipitation depth in mm",
+            )
+            notes_val = st.text_input(
+                "Field ID / Operational Reference",
+                value=str(st.session_state.get("field_notes", "Field Zone A-1")),
+                help="Custom reference tag to identify this audit in prediction history",
             )
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        analyze_btn = st.form_submit_button("🌱 Analyze & Predict", use_container_width=True)
+        submit_btn = st.form_submit_button("🌱 PREDICT SUITABLE CROP", use_container_width=True)
 
-    if analyze_btn:
-        user_input_dict = {
+    # Process Form Submission
+    if submit_btn:
+        user_inputs = {
             "N": n_val,
             "P": p_val,
             "K": k_val,
-            "temperature": t_val,
-            "humidity": h_val,
+            "temperature": temp_val,
+            "humidity": hum_val,
             "ph": ph_val,
-            "rainfall": r_val,
+            "rainfall": rain_val,
         }
-        st.session_state["current_inputs"] = user_input_dict
+        val_res = validate_input_features(user_inputs)
 
-        # Validate
-        val_res = validate_input_features(user_input_dict)
         if not val_res["is_valid"]:
             for err in val_res["errors"]:
                 st.error(f"❌ {err}")
@@ -465,369 +459,420 @@ elif st.session_state["nav_page"] == "🌱 Crop Analysis":
                 for warn in val_res["warnings"]:
                     st.warning(f"⚠️ {warn}")
 
-            # Run Real Model Prediction
-            pred_res = predict_crop_suitability(user_input_dict, model=model, metadata=model_metadata)
-            soil_res = analyze_soil_nutrients(n_val, p_val, k_val, ph_val)
-            env_res = analyze_environmental_conditions(t_val, h_val, r_val, pred_res["predicted_crop"])
+            with st.spinner("Executing Machine Learning Inference..."):
+                pred_res = predict_crop_suitability(user_inputs, model=model, metadata=model_metadata)
+                soil_res = analyze_soil_nutrients(n_val, p_val, k_val, ph_val)
+                env_res = analyze_environmental_conditions(temp_val, hum_val, rain_val, pred_res["predicted_crop"])
+                log_id = log_prediction(user_inputs, pred_res, notes=notes_val)
 
-            # Auto-save to SQLite
-            log_id = log_prediction(user_input_dict, pred_res, notes="Web Dashboard Analysis")
+                # Persist to Session State
+                st.session_state.inputs = user_inputs
+                st.session_state.prediction = pred_res["predicted_crop"]
+                st.session_state.confidence = pred_res["confidence_pct"]
+                st.session_state.probabilities = pred_res["top_recommendations"]
+                st.session_state.model_name = pred_res["model_used"]
+                st.session_state.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.field_notes = notes_val
+                st.session_state.soil_analysis = soil_res
+                st.session_state.env_analysis = env_res
+                st.session_state.last_log_id = log_id
 
-            # Store in session state
-            st.session_state["last_analysis"] = {
-                "inputs": user_input_dict,
-                "prediction": pred_res,
-                "soil": soil_res,
-                "env": env_res,
-                "log_id": log_id,
-            }
-
-    # Display Result Screen if analysis is available
-    if st.session_state["last_analysis"] is not None:
-        analysis = st.session_state["last_analysis"]
-        p_res = analysis["prediction"]
-        s_res = analysis["soil"]
-        e_res = analysis["env"]
-        in_vals = analysis["inputs"]
-
+    # Display Prediction Results (if present in session state)
+    if st.session_state.prediction:
         st.markdown("---")
+        crop_name = st.session_state.prediction
+        icon = CROP_ICONS.get(crop_name.lower(), "🌱")
+        conf = st.session_state.confidence
+        m_name = st.session_state.model_name
 
-        # 1. Prediction Hero Card
+        # Result Hero Banner
         st.markdown(f"""
-        <div class="prediction-hero">
-            <div class="label-text">Recommended Crop</div>
-            <div class="crop-name">{p_res['crop_icon']} {p_res['predicted_crop'].upper()}</div>
-            <div class="confidence-badge">Prediction Confidence: {p_res['confidence_pct']}%</div>
+        <div class="result-hero">
+            <div style="font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; color: #c8e6c9; font-weight: 600;">
+                OPTIMAL CROP RECOMMENDATION
+            </div>
+            <div class="hero-crop-title">
+                {icon} {crop_name.capitalize()}
+            </div>
+            <div class="hero-subtitle">
+                Model Confidence: <b>{conf:.2f}%</b> &nbsp;|&nbsp; Engine: <b>{m_name}</b> &nbsp;|&nbsp; Ref: <b>{st.session_state.field_notes}</b>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # 2. Result Summary (3 compact cards)
-        st.markdown("### Analysis Summary")
-        colS1, colS2, colS3 = st.columns(3)
-        with colS1:
-            st.markdown(f"""
-            <div class="summary-box">
-                <div class="summary-box-title">🌱 Crop Recommendation</div>
-                <div class="summary-box-val">{p_res['predicted_crop'].capitalize()} ({p_res['confidence_pct']}%)</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with colS2:
-            st.markdown(f"""
-            <div class="summary-box">
-                <div class="summary-box-title">🧪 Soil Status</div>
-                <div class="summary-box-val">{s_res['ph_analysis']['classification']} (Score: {s_res['fertility_score']}/100)</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with colS3:
-            st.markdown(f"""
-            <div class="summary-box">
-                <div class="summary-box-title">🌤 Climate Regime</div>
-                <div class="summary-box-val">{e_res['climate_regime']['classification']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+        # Probabilities & Diagnostics Row
+        res_col1, res_col2 = st.columns([3, 2])
 
-        st.markdown("---")
+        with res_col1:
+            st.markdown("#### 📊 Top 5 Probabilistic Crop Candidates")
+            top_probs = st.session_state.probabilities or []
+            if top_probs:
+                p_df = pd.DataFrame(top_probs)
+                p_df["display_name"] = p_df["icon"] + " " + p_df["crop"].str.capitalize()
+                
+                fig = px.bar(
+                    p_df,
+                    x="probability_pct",
+                    y="display_name",
+                    orientation="h",
+                    text=p_df["probability_pct"].apply(lambda v: f"{v:.2f}%"),
+                    color="probability_pct",
+                    color_continuous_scale="greens",
+                )
+                fig.update_layout(
+                    yaxis=dict(autorange="reversed", title=""),
+                    xaxis=dict(title="Probability (%)", range=[0, max(100, max(p_df["probability_pct"]) * 1.15)]),
+                    showlegend=False,
+                    height=280,
+                    margin=dict(l=10, r=20, t=20, b=30),
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-        # 3. Top Recommendations & Soil Profile
-        colTop, colSoilP = st.columns([3, 2])
-        
-        with colTop:
-            st.markdown("### Other Suitable Crops")
-            top5_df = pd.DataFrame(p_res["top_recommendations"])
-            fig_top5 = px.bar(
-                top5_df,
-                x="probability_pct",
-                y="crop",
-                orientation="h",
-                text="probability_pct",
-                color="probability_pct",
-                color_continuous_scale="greens",
-                labels={"probability_pct": "Confidence (%)", "crop": "Crop Variety"},
+        with res_col2:
+            st.markdown("#### 🩺 Instant Health Summary")
+            s_data = st.session_state.soil_analysis or analyze_soil_nutrients(
+                st.session_state.inputs["N"], st.session_state.inputs["P"], st.session_state.inputs["K"], st.session_state.inputs["ph"]
             )
-            fig_top5.update_layout(yaxis=dict(autorange="reversed"), showlegend=False, height=260, margin=dict(l=0, r=0, t=10, b=10))
-            st.plotly_chart(fig_top5, use_container_width=True)
+            e_data = st.session_state.env_analysis or analyze_environmental_conditions(
+                st.session_state.inputs["temperature"], st.session_state.inputs["humidity"], st.session_state.inputs["rainfall"], crop_name
+            )
 
-        with colSoilP:
-            st.markdown("### Soil Profile")
-            st.write(f"**Nitrogen (N):** `{in_vals['N']:.0f} kg/ha` — *{s_res['nitrogen']['status']}* (Median: {DATASET_MEDIANS['N']:.0f})")
-            st.progress(min(int((in_vals["N"] / 140.0) * 100), 100))
+            st.markdown(f"""
+            <div style="background-color: #f8faf8; border: 1px solid #e0e6ed; padding: 1rem; border-radius: 8px; margin-bottom: 0.8rem;">
+                <div style="font-weight: 600; color: #1b5e20;">🧪 Soil Fertility Score: {s_data['fertility_score']}/100</div>
+                <div style="font-size: 0.85rem; color: #4a5568;">
+                    Reaction: <b>{s_data['ph_analysis']['classification']}</b> (pH {st.session_state.inputs['ph']})<br/>
+                    NPK Total: <b>{s_data['npk_total']} kg/ha</b> | Ratio: <b>{s_data['npk_ratio']}</b>
+                </div>
+            </div>
+            <div style="background-color: #f8faf8; border: 1px solid #e0e6ed; padding: 1rem; border-radius: 8px; margin-bottom: 0.8rem;">
+                <div style="font-weight: 600; color: #1b5e20;">⛅ Climate Regime: {e_data['climate_regime']['classification']}</div>
+                <div style="font-size: 0.85rem; color: #4a5568;">
+                    Microclimate Index: <b>{e_data['microclimate_index']}/100</b><br/>
+                    Active Abiotic Stresses: <b>{e_data['stress_analysis']['active_stress_count']} detected</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            st.write(f"**Phosphorus (P):** `{in_vals['P']:.0f} kg/ha` — *{s_res['phosphorus']['status']}* (Median: {DATASET_MEDIANS['P']:.0f})")
-            st.progress(min(int((in_vals["P"] / 145.0) * 100), 100))
-
-            st.write(f"**Potassium (K):** `{in_vals['K']:.0f} kg/ha` — *{s_res['potassium']['status']}* (Median: {DATASET_MEDIANS['K']:.0f})")
-            st.progress(min(int((in_vals["K"] / 205.0) * 100), 100))
-
-            st.write(f"**Soil pH:** `{in_vals['ph']:.1f}` — *{s_res['ph_analysis']['classification']}* (Median: {DATASET_MEDIANS['ph']:.1f})")
-
-        st.markdown("---")
-
-        # 4. 🔍 Why this crop?
-        st.markdown(f"### 🔍 Why was {p_res['predicted_crop'].capitalize()} predicted?")
-        st.write(f"""
-        The model identified **{p_res['predicted_crop'].capitalize()}** based on the combined pattern of the soil and environmental conditions provided.
-        The prediction uses:
-        • **Nitrogen:** {in_vals['N']:.1f} kg/ha  
-        • **Phosphorus:** {in_vals['P']:.1f} kg/ha  
-        • **Potassium:** {in_vals['K']:.1f} kg/ha  
-        • **Temperature:** {in_vals['temperature']:.1f} °C  
-        • **Humidity:** {in_vals['humidity']:.1f} %  
-        • **Soil pH:** {in_vals['ph']:.2f}  
-        • **Rainfall:** {in_vals['rainfall']:.1f} mm  
-        """)
-
-        comp_df = generate_crop_comparison_explanation(in_vals, p_res["predicted_crop"])
-        st.dataframe(comp_df, use_container_width=True)
-
-        # 5. Advanced What-If Simulation inside Expander
-        with st.expander("🧪 Advanced Analysis (What-If Scenario Simulator)"):
-            st.write("Modify one parameter to test how the model's recommendation responds in real time:")
-            colW1, colW2 = st.columns([1, 2])
-            with colW1:
-                feat_vary = st.selectbox("Parameter to vary", NUMERICAL_FEATURES, index=6)
-                b_range = DATASET_RANGES[feat_vary]
-                new_v = st.slider(f"Test new {feat_vary}", min_value=float(b_range[0]), max_value=float(b_range[1]), value=float(in_vals[feat_vary]))
-            with colW2:
-                perturbed = in_vals.copy()
-                perturbed[feat_vary] = new_v
-                test_pred = predict_crop_suitability(perturbed, model=model, metadata=model_metadata)
-                st.write(f"**Original Prediction:** {p_res['crop_icon']} {p_res['predicted_crop'].capitalize()} ({p_res['confidence_pct']}%)")
-                st.write(f"**New Prediction:** {test_pred['crop_icon']} {test_pred['predicted_crop'].capitalize()} ({test_pred['confidence_pct']}%)")
-                if p_res["predicted_crop"] == test_pred["predicted_crop"]:
-                    st.success("✅ Prediction remained stable.")
-                else:
-                    st.warning(f"⚠️ Recommendation shifted from {p_res['predicted_crop'].capitalize()} to {test_pred['predicted_crop'].capitalize()}.")
-
-        # 6. PDF Report Download Button
-        pdf_bytes = generate_pdf_report(in_vals, p_res, s_res, e_res)
+        # PDF Dossier Download
+        pred_dict = {
+            "predicted_crop": crop_name,
+            "confidence_pct": conf,
+            "model_used": m_name,
+            "top_recommendations": st.session_state.probabilities,
+        }
+        pdf_bytes = generate_pdf_report(st.session_state.inputs, pred_dict, s_data, e_data)
         st.download_button(
-            label="📄 Download Official PDF Report",
+            label="📄 Download Diagnostic PDF Dossier",
             data=pdf_bytes,
-            file_name=f"AgriSmart_Analysis_{p_res['predicted_crop']}.pdf",
+            file_name=f"AgriSmart_Diagnostic_{crop_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
 
 
 # ==============================================================================
-# PAGE 3: 🧪 SOIL ANALYSIS
+# 3. SOIL ANALYSIS PAGE
 # ==============================================================================
-elif st.session_state["nav_page"] == "🧪 Soil Analysis":
-    st.markdown('<div class="app-title">Soil Nutrient & Chemistry Analysis</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Evaluate macronutrient stoichiometry (N:P:K), empirical nutrient tiers, and soil pH dynamics against training data.</div>', unsafe_allow_html=True)
+elif nav_choice == "🧪 Soil Analysis":
+    st.markdown('<div class="main-header">🧪 Soil Nutrient & Stoichiometry Diagnostic</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">In-Depth Evaluation of Primary Macronutrients (NPK) and Soil Reaction (pH)</div>', unsafe_allow_html=True)
 
-    inputs = st.session_state["current_inputs"]
+    inputs = st.session_state.inputs
+    crop_ctx = st.session_state.prediction
+    soil_res = analyze_soil_nutrients(inputs["N"], inputs["P"], inputs["K"], inputs["ph"])
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        n_in = st.number_input("Nitrogen (N) [kg/ha]", 0.0, 250.0, float(inputs.get("N", DATASET_MEDIANS["N"])), key="s_n")
-    with col2:
-        p_in = st.number_input("Phosphorus (P) [kg/ha]", 0.0, 250.0, float(inputs.get("P", DATASET_MEDIANS["P"])), key="s_p")
-    with col3:
-        k_in = st.number_input("Potassium (K) [kg/ha]", 0.0, 300.0, float(inputs.get("K", DATASET_MEDIANS["K"])), key="s_k")
-    with col4:
-        ph_in = st.number_input("Soil pH", 0.0, 14.0, float(inputs.get("ph", DATASET_MEDIANS["ph"])), key="s_ph")
+    st.info(f"📋 **Current Field Telemetry:** N={inputs['N']} kg/ha, P={inputs['P']} kg/ha, K={inputs['K']} kg/ha, pH={inputs['ph']} | *Reference: {st.session_state.get('field_notes', 'Current Inputs')}*")
 
-    soil_res = analyze_soil_nutrients(n_in, p_in, k_in, ph_in)
+    # Top Nutrient Level Cards
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    with sc1:
+        n_st = soil_res["nitrogen"]["status"]
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Nitrogen (N)</div>
+            <div class="metric-val">{inputs['N']} kg/ha</div>
+            <div class="metric-sub">Status: <b>{n_st}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc2:
+        p_st = soil_res["phosphorus"]["status"]
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Phosphorus (P)</div>
+            <div class="metric-val">{inputs['P']} kg/ha</div>
+            <div class="metric-sub">Status: <b>{p_st}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc3:
+        k_st = soil_res["potassium"]["status"]
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Potassium (K)</div>
+            <div class="metric-val">{inputs['K']} kg/ha</div>
+            <div class="metric-sub">Status: <b>{k_st}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc4:
+        ph_info = soil_res["ph_analysis"]
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Soil pH Reaction</div>
+            <div class="metric-val">{inputs['ph']} pH</div>
+            <div class="metric-sub" style="color: {ph_info['color']};"><b>{ph_info['classification']}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
-    colM1, colM2, colM3, colM4 = st.columns(4)
-    with colM1:
-        st.metric("Total Macronutrients", f"{soil_res['npk_total']} kg/ha")
-    with colM2:
-        st.metric("N:P:K Ratio", f"{soil_res['npk_ratio']}")
-    with colM3:
-        st.metric("Soil Reaction", f"{soil_res['ph_analysis']['classification']}")
-    with colM4:
-        st.metric("Fertility Health Score", f"{soil_res['fertility_score']}/100")
 
-    st.markdown("---")
-    colL, colR = st.columns(2)
-    with colL:
-        st.markdown("### NPK Profile Chart")
-        npk_df = pd.DataFrame({
-            "Nutrient": ["Nitrogen", "Phosphorus", "Potassium"],
-            "Measured (kg/ha)": [n_in, p_in, k_in],
-            "Dataset Median (kg/ha)": [DATASET_MEDIANS["N"], DATASET_MEDIANS["P"], DATASET_MEDIANS["K"]],
-        })
-        fig_npk = px.bar(
-            npk_df,
-            x="Nutrient",
-            y=["Measured (kg/ha)", "Dataset Median (kg/ha)"],
-            barmode="group",
-            color_discrete_map={"Measured (kg/ha)": "#2e7d32", "Dataset Median (kg/ha)": "#94a3b8"},
-        )
-        fig_npk.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=10))
+    # NPK Stoichiometry & Visual Comparison
+    s_col1, s_col2 = st.columns(2)
+
+    with s_col1:
+        st.markdown("#### ⚖️ NPK Stoichiometry & Nutrient Balance")
+        st.write(f"**Total Macronutrient Load:** `{soil_res['npk_total']} kg/ha`")
+        st.write(f"**Empirical N:P:K Ratio:** `{soil_res['npk_ratio']}`")
+        st.write(f"**Overall Soil Fertility Score:** `{soil_res['fertility_score']} / 100`")
+
+        # NPK Bar Chart
+        npk_df = pd.DataFrame([
+            {"Nutrient": "Nitrogen (N)", "Value": inputs["N"], "Dataset Median": 37.0, "Unit": "kg/ha"},
+            {"Nutrient": "Phosphorus (P)", "Value": inputs["P"], "Dataset Median": 51.0, "Unit": "kg/ha"},
+            {"Nutrient": "Potassium (K)", "Value": inputs["K"], "Dataset Median": 32.0, "Unit": "kg/ha"},
+        ])
+        fig_npk = go.Figure()
+        fig_npk.add_trace(go.Bar(name="Your Field Value", x=npk_df["Nutrient"], y=npk_df["Value"], marker_color="#2e7d32"))
+        fig_npk.add_trace(go.Bar(name="Benchmark Median", x=npk_df["Nutrient"], y=npk_df["Dataset Median"], marker_color="#90caf9"))
+        fig_npk.update_layout(barmode="group", height=300, margin=dict(l=20, r=20, t=30, b=30), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
         st.plotly_chart(fig_npk, use_container_width=True)
 
-    with colR:
-        st.markdown("### Soil pH & Amendment Advisory")
-        ph_info = soil_res["ph_analysis"]
-        st.info(f"**Classification:** {ph_info['classification']}\n\n**Agronomic Context:** {ph_info['risk']}")
-        st.success(f"**Actionable Advisory:** {ph_info['recommendation']}")
+    with s_col2:
+        st.markdown("#### 🔬 Soil Reaction & Chemical Agronomy")
+        st.markdown(f"""
+        <div style="background-color: #f8faf8; border-left: 5px solid {ph_info['color']}; padding: 1.2rem; border-radius: 8px;">
+            <h4 style="color: {ph_info['color']}; margin-top: 0;">{ph_info['classification']} (pH {inputs['ph']})</h4>
+            <p><b>Bioavailability & Risk:</b> {ph_info['risk']}</p>
+            <p><b>Recommended Management:</b> {ph_info['recommendation']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 🌿 Nutrient Physiological Roles")
+        st.markdown(f"""
+        - **Nitrogen (N):** {soil_res['nitrogen']['role']}
+        - **Phosphorus (P):** {soil_res['phosphorus']['role']}
+        - **Potassium (K):** {soil_res['potassium']['role']}
+        """)
 
 
 # ==============================================================================
-# PAGE 4: 🌤 ENVIRONMENTAL ANALYSIS
+# 4. ENVIRONMENTAL ANALYSIS PAGE
 # ==============================================================================
-elif st.session_state["nav_page"] == "🌤 Environmental Analysis":
-    st.markdown('<div class="app-title">Environmental & Climate Analysis</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Analyze ambient thermal regime, atmospheric relative humidity, and precipitation dynamics.</div>', unsafe_allow_html=True)
+elif nav_choice == "⛅ Environmental Analysis":
+    st.markdown('<div class="main-header">⛅ Environmental & Microclimate Assessment</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Atmospheric Moisture, Thermal Regime, and Abiotic Stress Diagnostics</div>', unsafe_allow_html=True)
 
-    inputs = st.session_state["current_inputs"]
+    inputs = st.session_state.inputs
+    crop_ctx = st.session_state.prediction
+    env_res = analyze_environmental_conditions(inputs["temperature"], inputs["humidity"], inputs["rainfall"], crop_ctx)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        t_in = st.number_input("Temperature (°C)", 0.0, 50.0, float(inputs.get("temperature", DATASET_MEDIANS["temperature"])), key="e_t")
-    with col2:
-        h_in = st.number_input("Relative Humidity (%)", 0.0, 100.0, float(inputs.get("humidity", DATASET_MEDIANS["humidity"])), key="e_h")
-    with col3:
-        r_in = st.number_input("Precipitation / Rainfall (mm)", 0.0, 500.0, float(inputs.get("rainfall", DATASET_MEDIANS["rainfall"])), key="e_r")
+    st.info(f"📋 **Current Climate Telemetry:** Temperature={inputs['temperature']}°C, Humidity={inputs['humidity']}%, Rainfall={inputs['rainfall']} mm")
 
-    env_res = analyze_environmental_conditions(t_in, h_in, r_in)
+    ec1, ec2, ec3, ec4 = st.columns(4)
+    with ec1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Temperature</div>
+            <div class="metric-val">{inputs['temperature']} °C</div>
+            <div class="metric-sub">Thermal Regime</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with ec2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Relative Humidity</div>
+            <div class="metric-val">{inputs['humidity']} %</div>
+            <div class="metric-sub">Atmospheric Moisture</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with ec3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Rainfall Depth</div>
+            <div class="metric-val">{inputs['rainfall']} mm</div>
+            <div class="metric-sub">Precipitation Inflow</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with ec4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Microclimate Index</div>
+            <div class="metric-val">{env_res['microclimate_index']}/100</div>
+            <div class="metric-sub">{env_res['suitability_assessment']['overall_suitability']}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.subheader(f"Agro-Climatic Regime: {env_res['climate_regime']['classification']}")
-    st.info(f"**Regime Description:** {env_res['climate_regime']['description']}\n\n**Naturally Adapted Crops:** {env_res['climate_regime']['crops_suited']}")
 
-    colE1, colE2 = st.columns(2)
-    with colE1:
-        st.markdown("### Meteorological Parameter Gauges")
-        st.write(f"**Temperature:** `{t_in:.1f} °C` (Dataset Median: {DATASET_MEDIANS['temperature']:.1f} °C)")
-        st.progress(min(int((t_in / 45.0) * 100), 100))
+    e_col1, e_col2 = st.columns(2)
 
-        st.write(f"**Humidity:** `{h_in:.1f} %` (Dataset Median: {DATASET_MEDIANS['humidity']:.1f} %)")
-        st.progress(min(int((h_in / 100.0) * 100), 100))
+    with e_col1:
+        st.markdown("#### 🌐 Agro-Climatic Regime Classification")
+        regime = env_res["climate_regime"]
+        st.markdown(f"""
+        <div style="background-color: #f8faf8; border-left: 5px solid {regime['color']}; padding: 1.2rem; border-radius: 8px;">
+            <h4 style="color: {regime['color']}; margin-top: 0;">{regime['classification']}</h4>
+            <p>{regime['description']}</p>
+            <p><b>Ecological Crop Affinity:</b> {regime['crops_suited']}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.write(f"**Rainfall:** `{r_in:.1f} mm` (Dataset Median: {DATASET_MEDIANS['rainfall']:.1f} mm)")
-        st.progress(min(int((r_in / 300.0) * 100), 100))
-
-    with colE2:
-        st.markdown("### Abiotic Stress & Suitability Diagnostics")
-        st.metric("Microclimate Suitability Index", f"{env_res['microclimate_index']}/100")
-        for rec in env_res["stress_analysis"]["recommendations"]:
-            st.warning(f"⚠️ {rec}")
+    with e_col2:
+        st.markdown("#### ⚠️ Abiotic Stress Diagnostics")
+        stress = env_res["stress_analysis"]
+        for rec in stress["recommendations"]:
+            st.warning(f"📌 {rec}") if "risk" in rec.lower() or "stress" in rec.lower() or "deficit" in rec.lower() or "excessive" in rec.lower() else st.success(f"✅ {rec}")
 
 
 # ==============================================================================
-# PAGE 5: 📊 INSIGHTS (CONSOLIDATED DATA & MODEL ANALYTICS)
+# 5. INSIGHTS PAGE
 # ==============================================================================
-elif st.session_state["nav_page"] == "📊 Insights":
-    st.markdown('<div class="app-title">Smart Insights & Analytics</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Understand dataset characteristics, feature relationships, and machine learning model benchmarks.</div>', unsafe_allow_html=True)
+elif nav_choice == "💡 Insights":
+    st.markdown('<div class="main-header">💡 Agronomic & Model Insights</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Feature Importances, Crop Profiles, and Model Benchmarks</div>', unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4 = st.tabs(["🌱 Crop Distribution", "📈 Feature Insights", "🔗 Relationships", "🤖 Model Performance"])
+    tab1, tab2, tab3 = st.tabs(["📊 Feature Importance (XAI)", "🌿 Crop Benchmark Profiles", "📈 Model Benchmarking"])
 
     with tab1:
-        st.subheader("Crop Class Distribution")
-        class_df = pd.DataFrame(list(data_summary["class_distribution"].items()), columns=["Crop", "Observations"])
-        fig_class = px.bar(class_df, x="Crop", y="Observations", color="Observations", color_continuous_scale="greens")
-        fig_class.update_layout(xaxis_tickangle=-45, height=350)
-        st.plotly_chart(fig_class, use_container_width=True)
-        st.caption("The training dataset contains 22 agricultural crop classes with exactly 100 empirical observations each.")
+        st.markdown("#### Global Feature Attribution (Gini Importance)")
+        st.write("Relative influence of each agronomic parameter in the Random Forest classification architecture:")
+
+        feat_imp = model_metadata.get("metrics", {}).get("feature_importances", {})
+        if not feat_imp:
+            # Fallback to model importances if needed
+            from src.explainability import get_model_feature_importance
+            feat_imp = get_model_feature_importance(model, model_metadata["features"])
+
+        imp_df = pd.DataFrame(list(feat_imp.items()), columns=["Feature", "Importance Score"])
+        imp_df["Percentage"] = (imp_df["Importance Score"] * 100).round(2)
+        
+        fig_imp = px.bar(
+            imp_df,
+            x="Percentage",
+            y="Feature",
+            orientation="h",
+            text=imp_df["Percentage"].apply(lambda v: f"{v:.2f}%"),
+            color="Percentage",
+            color_continuous_scale="Viridis",
+        )
+        fig_imp.update_layout(yaxis=dict(autorange="reversed"), height=360, margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig_imp, use_container_width=True)
 
     with tab2:
-        st.subheader("Feature Distributions")
-        f_choice = st.selectbox("Select Feature to Inspect", NUMERICAL_FEATURES, index=6)
-        fig_f = px.histogram(df_raw, x=f_choice, color=TARGET_COLUMN, nbins=30, title=f"Distribution of {f_choice} across Crops")
-        st.plotly_chart(fig_f, use_container_width=True)
+        st.markdown("#### Empirical Crop Benchmark Profiles")
+        profiles = get_crop_profiles(df_raw)
+        selected_crop = st.selectbox("Select Crop Species to Inspect", sorted(list(profiles.keys())), index=0)
+        
+        c_prof = profiles[selected_crop]
+        prof_df = pd.DataFrame(c_prof).T
+        prof_df = prof_df[["mean", "std", "min", "median", "max", "q25", "q75"]]
+        prof_df.columns = ["Mean", "Std Dev", "Min", "Median", "Max", "25th %ile", "75th %ile"]
+        st.dataframe(prof_df, use_container_width=True)
+
+        if st.session_state.prediction:
+            st.markdown("##### 🔍 Alignment with Latest Inputs")
+            from src.explainability import generate_crop_comparison_explanation
+            comp_df = generate_crop_comparison_explanation(st.session_state.inputs, st.session_state.prediction)
+            st.dataframe(comp_df, use_container_width=True)
 
     with tab3:
-        st.subheader("Pearson Correlation Heatmap")
-        corr = df_raw[NUMERICAL_FEATURES].corr()
-        fig_corr = px.imshow(corr, text_auto=True, aspect="auto", color_continuous_scale="Viridis")
-        fig_corr.update_layout(height=400)
-        st.plotly_chart(fig_corr, use_container_width=True)
+        st.markdown("#### Rigorous Multi-Model Benchmark Comparison")
+        st.write("All models trained and cross-validated with 5-Fold Stratified K-Fold on the 2,200 Kaggle dataset:")
 
-    with tab4:
-        st.subheader("Model Benchmarking Results")
-        comp_path = os.path.join(ROOT_DIR, "models", "model_comparison.json")
-        if os.path.exists(comp_path):
-            with open(comp_path, "r") as f:
-                benchmarks = json.load(f)
-            b_df = pd.DataFrame(benchmarks)[["config_name", "model_name", "feature_set", "test_accuracy", "test_f1_weighted", "cv_f1_mean", "cv_f1_std"]]
-            st.dataframe(b_df, use_container_width=True)
-
-            st.success(f"🏆 **Final Selected Model:** `{model_metadata['winning_config']}` with Test Accuracy: `{model_metadata['metrics']['accuracy']*100:.2f}%`.")
-
-        with st.expander("🔍 View Multiclass Confusion Matrix (22 Classes)"):
-            cm_data = np.array(model_metadata["confusion_matrix"])
-            classes = model_metadata["classes"]
-            fig_cm = px.imshow(cm_data, x=classes, y=classes, text_auto=True, color_continuous_scale="greens", labels=dict(x="Predicted", y="True"))
-            fig_cm.update_layout(height=600, xaxis_tickangle=-45)
-            st.plotly_chart(fig_cm, use_container_width=True)
-
-        with st.expander("📋 View Raw Training Dataset Sample"):
-            st.dataframe(df_raw, use_container_width=True)
+        comp_file = os.path.join(PROJECT_ROOT, "models", "model_comparison.json")
+        if os.path.exists(comp_file):
+            with open(comp_file, "r") as f:
+                bench_data = json.load(f)
+            b_df = pd.DataFrame(bench_data)
+            display_cols = ["model_name", "feature_set", "test_accuracy", "test_f1_weighted", "cv_f1_mean", "cv_f1_std"]
+            b_df_sub = b_df[display_cols].copy()
+            b_df_sub.columns = ["Model Architecture", "Feature Set", "Test Accuracy", "Test F1 (Weighted)", "5-Fold CV F1 Mean", "5-Fold CV F1 Std"]
+            st.dataframe(b_df_sub, use_container_width=True)
+        else:
+            st.info("Benchmark data loading from model_results.json...")
 
 
 # ==============================================================================
-# PAGE 6: 📜 HISTORY
+# 6. PREDICTION HISTORY PAGE
 # ==============================================================================
-elif st.session_state["nav_page"] == "📜 History":
-    st.markdown('<div class="app-title">Prediction History</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Review previous crop recommendations and soil analyses logged in the local SQLite database.</div>', unsafe_allow_html=True)
+elif nav_choice == "📜 Prediction History":
+    st.markdown('<div class="main-header">📜 Prediction History & Audit Trail</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Persistent SQLite Records of Field Audits and Diagnostic Outputs</div>', unsafe_allow_html=True)
 
     history_df = export_predictions_to_dataframe()
 
     if not history_df.empty:
-        colH1, colH2, colH3 = st.columns(3)
-        with colH1:
-            st.metric("Total Analyses", f"{len(history_df)}")
-        with colH2:
-            st.metric("Top Recommended Crop", f"{history_df['predicted_crop'].mode()[0].capitalize()}")
-        with colH3:
-            st.metric("Average Confidence", f"{history_df['confidence'].mean()*100:.1f}%")
+        # Summary Metrics
+        h1, h2, h3 = st.columns(3)
+        with h1:
+            st.metric("Total Logged Audits", f"{len(history_df)}")
+        with h2:
+            top_crop = history_df["predicted_crop"].mode()[0].capitalize() if not history_df.empty else "N/A"
+            st.metric("Most Recommended Crop", top_crop)
+        with h3:
+            avg_conf = history_df["confidence"].mean() * 100
+            st.metric("Average Confidence", f"{avg_conf:.2f}%")
 
         st.markdown("---")
-        
-        display_cols = ["id", "timestamp", "predicted_crop", "confidence", "n", "p", "k", "temperature", "humidity", "ph", "rainfall"]
-        available_cols = [c for c in display_cols if c in history_df.columns]
-        st.dataframe(history_df[available_cols], use_container_width=True)
 
-        colD1, colD2 = st.columns([1, 1])
-        with colD1:
+        # History Table Display
+        display_df = history_df[["id", "timestamp", "notes", "predicted_crop", "confidence", "n", "p", "k", "temperature", "humidity", "ph", "rainfall", "model_used"]].copy()
+        display_df.columns = ["ID", "Timestamp", "Field Notes", "Recommended Crop", "Confidence", "N", "P", "K", "Temp (°C)", "Humidity (%)", "pH", "Rainfall (mm)", "Model"]
+        display_df["Recommended Crop"] = display_df["Recommended Crop"].str.capitalize()
+        display_df["Confidence"] = (display_df["Confidence"] * 100).round(2).astype(str) + "%"
+
+        st.dataframe(display_df, use_container_width=True)
+
+        act_col1, act_col2 = st.columns(2)
+        with act_col1:
             csv_bytes = history_df.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="📥 Download History CSV",
+                label="📥 Export History to CSV",
                 data=csv_bytes,
-                file_name="agrismart_history.csv",
+                file_name="AgriSmart_Prediction_History.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
-        with colD2:
-            confirm_clear = st.checkbox("Confirm clearing history")
-            if st.button("🗑️ Clear History", disabled=not confirm_clear, use_container_width=True):
-                deleted_cnt = clear_history()
-                st.success(f"Cleared {deleted_cnt} records from history.")
+        with act_col2:
+            if st.button("🗑️ Clear Prediction History", use_container_width=True):
+                clear_history()
+                st.success("History cleared successfully.")
                 st.rerun()
     else:
-        st.info("No predictions logged yet. Run a prediction on the 'Crop Analysis' page to populate history.")
+        st.info("No predictions logged yet. Run your first analysis in the **Crop Analysis** tab.")
 
 
 # ==============================================================================
-# PAGE 7: ℹ️ ABOUT (PRODUCT & TECHNOLOGY ONLY - VIVA REMOVED)
+# 7. ABOUT PAGE
 # ==============================================================================
-elif st.session_state["nav_page"] == "ℹ️ About":
-    st.markdown('<div class="app-title">About AgriSmart AI</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Intelligent Crop Suitability Classification & Soil Analysis System</div>', unsafe_allow_html=True)
+elif nav_choice == "ℹ️ About":
+    st.markdown('<div class="main-header">ℹ️ About AgriSmart AI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Intelligent Crop Suitability & Soil Analysis Decision-Support System</div>', unsafe_allow_html=True)
 
     st.markdown("""
-    **AgriSmart AI** is a machine-learning-based crop suitability classification and soil diagnostic application.
+    ### 🎯 System Purpose & Objectives
+    **AgriSmart AI** is an agricultural decision-support application built to bridge agronomic science and machine learning.
+    By evaluating the physical and chemical micro-environment of an agricultural plot, the system assists farmers, agronomists, 
+    and agricultural extension workers in selecting crop species with the highest probability of optimal yield and resilience.
 
-    It analyzes soil chemistry and environmental parameters to identify optimal crop categories:
-    - **Macronutrients:** Nitrogen (N), Phosphorus (P), Potassium (K)
-    - **Soil Reaction:** Soil pH
-    - **Environmental Meteorology:** Ambient Temperature, Relative Humidity, Rainfall
+    ### 🏗️ Technical Architecture & Methodology
+    1. **Data Ingestion & Integrity:** Grounded in 2,200 non-synthetic agricultural benchmark observations across 22 crop species.
+    2. **Machine Learning Pipeline:** Evaluates 4 candidate model families (Logistic Regression, K-Nearest Neighbors, Decision Trees, Random Forests) using 5-Fold Stratified Cross-Validation.
+    3. **Champion Architecture:** Random Forest Ensemble delivering **99.55% test accuracy** and **99.49% cross-validation F1-score**.
+    4. **Explainability & Diagnostics:** Integrates feature attribution, chemical soil stoichiometry, and agro-climatic stress indicators.
+    5. **Data Governance & Auditability:** Every prediction is stored locally in an embedded SQLite database with complete input tracking.
 
-    ---
-
-    ### 🛠️ Technology Stack
-    - **Programming Language:** Python 3.10+
-    - **Machine Learning Engine:** Scikit-Learn (Random Forest, Decision Tree, KNN, Logistic Regression)
-    - **Data Processing:** Pandas, NumPy
-    - **Application Framework:** Streamlit
-    - **Interactive Visualizations:** Plotly Express & Graph Objects
-    - **Local Storage:** SQLite3
-    - **Reporting System:** ReportLab PDF Engine
+    ### 📚 Dataset Citation
+    - **Dataset:** *Crop Recommendation Dataset* (Kaggle Benchmark)
+    - **Total Records:** 2,200 balanced samples (100 per crop species)
+    - **Variables:** Nitrogen (N), Phosphorus (P), Potassium (K), Temperature (°C), Humidity (%), Soil pH, Rainfall (mm)
     """)

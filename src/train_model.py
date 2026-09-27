@@ -177,6 +177,54 @@ def train_and_evaluate_all_models() -> Dict[str, Any]:
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
+    # Compute individual model metrics on original features for model_results.json
+    model_key_map = {
+        "Logistic Regression": "logistic_regression",
+        "K-Nearest Neighbors": "knn",
+        "Decision Tree": "decision_tree",
+        "Random Forest": "random_forest",
+    }
+    structured_metrics = {}
+    for res in benchmark_results:
+        if res["feature_set"] == "Original Features (7)":
+            m_key = model_key_map.get(res["model_name"], res["model_name"].lower().replace(" ", "_").replace("-", "_"))
+            structured_metrics[m_key] = {
+                "accuracy": res["test_accuracy"],
+                "precision_macro": res["test_precision_macro"],
+                "recall_macro": res["test_recall_macro"],
+                "f1_macro": res["test_f1_macro"],
+            }
+
+    # Extract feature importances for Random Forest on original features
+    winner_pipe = winner_obj["pipeline"]
+    classifier = winner_pipe.named_steps.get("classifier", winner_pipe)
+    if hasattr(classifier, "feature_importances_"):
+        raw_imp = classifier.feature_importances_
+        sum_imp = float(np.sum(raw_imp))
+        feat_imp_dict = {
+            feat: round(float(val) / sum_imp, 4)
+            for feat, val in zip(NUMERICAL_FEATURES, raw_imp)
+        }
+    else:
+        feat_imp_dict = {feat: round(1.0 / len(NUMERICAL_FEATURES), 4) for feat in NUMERICAL_FEATURES}
+
+    from datetime import datetime
+    model_results_data = {
+        "final_model_name": winner_meta["model_name"],
+        "feature_order": NUMERICAL_FEATURES,
+        "trained_at": datetime.now().isoformat(),
+        "dataset_rows": len(df_raw),
+        "dataset_classes": len(classes),
+        "metrics": structured_metrics,
+        "feature_importances": feat_imp_dict,
+        "confusion_matrix": winner_meta["confusion_matrix"],
+        "class_labels": classes,
+        "supports_predict_proba": hasattr(winner_pipe, "predict_proba"),
+    }
+    results_path = os.path.join(models_dir, "model_results.json")
+    with open(results_path, "w") as f:
+        json.dump(model_results_data, f, indent=2)
+
     return metadata
 
 

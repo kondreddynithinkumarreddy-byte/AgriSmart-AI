@@ -133,17 +133,3 @@ def export_predictions_to_dataframe() -> pd.DataFrame:
     df = pd.read_sql_query("SELECT * FROM prediction_history ORDER BY id DESC", conn)
     conn.close()
     return df
-
-
-def clear_history() -> int:
-    """Clears all records from prediction_history and returns deleted count."""
-    init_db()
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM prediction_history")
-    count = cursor.fetchone()[0]
-    cursor.execute("DELETE FROM prediction_history")
-    conn.commit()
-    conn.close()
-    return int(count)
-

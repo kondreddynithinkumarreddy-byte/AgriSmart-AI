@@ -66,7 +66,6 @@ st.set_page_config(
 # Custom Theme CSS
 st.markdown("""
 <style>
-    /* Global Typography & Palette */
     :root {
         --primary: #1b5e20;
         --primary-light: #2e7d32;
@@ -76,12 +75,6 @@ st.markdown("""
         --border-color: #e2e8f0;
     }
     
-    .app-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 0.25rem;
-    }
     .app-title {
         font-size: 2.2rem;
         font-weight: 800;
@@ -313,7 +306,6 @@ st.sidebar.info(
 # PAGE 1: 🏠 HOME (USER-FOCUSED PRODUCT DASHBOARD)
 # ==============================================================================
 if st.session_state["nav_page"] == "🏠 Home":
-    # Hero Section
     st.markdown("""
     <div class="hero-banner">
         <h1>🌱 AgriSmart AI</h1>
@@ -789,7 +781,6 @@ elif st.session_state["nav_page"] == "📜 History":
 
         st.markdown("---")
         
-        # Display clean history table
         display_cols = ["id", "timestamp", "predicted_crop", "confidence", "n", "p", "k", "temperature", "humidity", "ph", "rainfall"]
         available_cols = [c for c in display_cols if c in history_df.columns]
         st.dataframe(history_df[available_cols], use_container_width=True)
@@ -815,41 +806,28 @@ elif st.session_state["nav_page"] == "📜 History":
 
 
 # ==============================================================================
-# PAGE 7: ℹ️ ABOUT
+# PAGE 7: ℹ️ ABOUT (PRODUCT & TECHNOLOGY ONLY - VIVA REMOVED)
 # ==============================================================================
 elif st.session_state["nav_page"] == "ℹ️ About":
     st.markdown('<div class="app-title">About AgriSmart AI</div>', unsafe_allow_html=True)
     st.markdown('<div class="app-subtitle">Intelligent Crop Suitability Classification & Soil Analysis System</div>', unsafe_allow_html=True)
 
     st.markdown("""
-    **AgriSmart AI** is an explainable machine learning decision-support application built for agricultural practitioners, agronomists, and researchers.
+    **AgriSmart AI** is a machine-learning-based crop suitability classification and soil diagnostic application.
 
-    It analyzes chemical soil parameters and meteorological indicators to predict optimal crop varieties:
+    It analyzes soil chemistry and environmental parameters to identify optimal crop categories:
     - **Macronutrients:** Nitrogen (N), Phosphorus (P), Potassium (K)
     - **Soil Reaction:** Soil pH
-    - **Atmospheric Climate:** Ambient Temperature, Relative Humidity, Rainfall
+    - **Environmental Meteorology:** Ambient Temperature, Relative Humidity, Rainfall
 
     ---
 
     ### 🛠️ Technology Stack
-    - **Language:** Python 3.10+
-    - **Machine Learning:** Scikit-Learn (Random Forest, Decision Tree, KNN, Logistic Regression)
+    - **Programming Language:** Python 3.10+
+    - **Machine Learning Engine:** Scikit-Learn (Random Forest, Decision Tree, KNN, Logistic Regression)
     - **Data Processing:** Pandas, NumPy
-    - **Web Framework:** Streamlit
-    - **Visualizations:** Plotly Express & Plotly Graph Objects
-    - **Persistence:** SQLite3
-    - **Reporting:** ReportLab PDF Engine
-
-    ---
-
-    ### 🎓 Machine Learning Methodology & Defense Guide
-
-    #### 1. Why was Random Forest selected as the final production model?
-    *Answer:* The dataset consists of 2,200 structured tabular observations across 7 physical parameters. Random Forest constructs orthogonal decision tree ensembles that match physical agronomic thresholds, minimizes variance through bagging, and achieved a **99.55% test accuracy** with 99.49% 5-fold cross-validation stability.
-
-    #### 2. How was Data Leakage strictly prevented?
-    *Answer:* All feature scalers (`StandardScaler`) are encapsulated within `sklearn.pipeline.Pipeline` objects and fitted solely on training splits during 5-Fold Stratified Cross-Validation. The target label was strictly isolated from input features.
-
-    #### 3. Why were the original 7 features preferred over derived ratios?
-    *Answer:* The 7 physical features represent orthogonal dimensions. Derived collinear ratios did not add mutual information, so the parsimonious 7-feature model was chosen in accordance with Occam's Razor.
+    - **Application Framework:** Streamlit
+    - **Interactive Visualizations:** Plotly Express & Graph Objects
+    - **Local Storage:** SQLite3
+    - **Reporting System:** ReportLab PDF Engine
     """)

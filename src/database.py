@@ -133,18 +133,3 @@ def export_predictions_to_dataframe() -> pd.DataFrame:
     df = pd.read_sql_query("SELECT * FROM prediction_history ORDER BY id DESC", conn)
     conn.close()
     return df
-
-
-def clear_history() -> bool:
-    """Clear all records from prediction_history table."""
-    try:
-        init_db()
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM prediction_history")
-        conn.commit()
-        conn.close()
-        return True
-    except Exception:
-        return False
-
